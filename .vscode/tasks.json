@@ -9,6 +9,7 @@
                 "-g",
                 "${fileDirname}\\maingw.cpp",
                 "${fileDirname}\\digimain.cpp",
+                "${fileDirname}\\serial.cpp",
                 "-o",
                 "${fileDirname}\\digicom.exe"
             ],

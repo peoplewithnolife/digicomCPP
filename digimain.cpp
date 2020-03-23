@@ -1,4 +1,5 @@
 #include "Hardware.h"
+#include "serial.h"
 
 #include <windows.h>
 #include <process.h>
@@ -9,6 +10,8 @@ uint8_t StartThreads(void);
 int digimain(int argc, char const *argv[])
 {
     uint16_t i;
+    TS_SERIAL_SETUP serialSetup;
+
     /* code */
     printf("Digi Main Get a Job and a haircut\n");
 
@@ -17,6 +20,14 @@ int digimain(int argc, char const *argv[])
     for (i=0; i<argc; i++)
     {
         printf("%s\n", argv[i]);
+    }
+
+    serialSetup.comportNum = 3;
+    serialSetup.baudRate = CBR_115200;
+    if (SerialInit(&serialSetup) != 0)
+    {
+        printf("Error opening serial port.");
+        exit(1);
     }
 
     StartThreads();
