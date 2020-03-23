@@ -10,6 +10,9 @@
                 "${fileDirname}\\maingw.cpp",
                 "${fileDirname}\\digimain.cpp",
                 "${fileDirname}\\serial.cpp",
+                "${fileDirname}\\digiApi.cpp",
+                "${fileDirname}\\digiApiCmd.cpp",
+                "${fileDirname}\\DbgUtil.cpp",
                 "-o",
                 "${fileDirname}\\digicom.exe"
             ],
