@@ -7,19 +7,17 @@
 
 #define ENC_FRAME_BUFF_SIZE 256
 
-static uint8_t frmId = 0;
 static uint8_t rawFrmBuff[ENC_FRAME_BUFF_SIZE];
 static uint8_t encFrmBuff[ENC_FRAME_BUFF_SIZE];
 
-uint16_t ApiGetParam(uint8_t* atStr, uint16_t lenAtStr, uint8_t* paramV)
+uint16_t ApiGetParam(uint8_t* atStr, uint16_t lenAtStr, uint8_t frmId, uint8_t* paramV)
 {
    uint16_t ret;
    uint16_t i;
 
-   frmId ++;
-   rawFrmBuff[0] = 0x09;
-//   rawFrmBuff[1] = frmId;
-   rawFrmBuff[1] = 0x01;
+   rawFrmBuff[0] = 0x08;
+
+   rawFrmBuff[1] = frmId;
    for (i=0; i<lenAtStr; i++)
    {
       rawFrmBuff[i+2] = atStr[i];

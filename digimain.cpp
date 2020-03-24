@@ -9,10 +9,13 @@
 #include <stdio.h>
 
 
-static void SerialReadCb(uint8_t* readDataV, uint16_t len);
-
-uint8_t StartThreads(void);
 unsigned __stdcall DigiThreadFunc( void* pArguments );
+static uint8_t nextFrameId;
+
+static void SerialReadCb(uint8_t* readDataV, uint16_t len);
+static uint8_t StartThreads(void);
+static uint8_t GetNextFrameId(void);
+static void FakeInput(void);
 
 int digimain(int argc, char const *argv[])
 {
@@ -20,14 +23,12 @@ int digimain(int argc, char const *argv[])
     TS_SERIAL_SETUP serialSetup;
 
     /* code */
-    printf("Digi Main Get a Job and a haircut\n");
-
-    printf("%d args\n",argc);
-
-    for (i=0; i<argc; i++)
-    {
-        printf("%s\n", argv[i]);
-    }
+    //printf("Digi Main Get a Job and a haircut\n");
+    //printf("%d args\n",argc);
+    //for (i=0; i<argc; i++)
+    //{
+    //    printf("%s\n", argv[i]);
+    //}
 
     serialSetup.comportNum = 22;
     serialSetup.baudRate = CBR_115200;
@@ -38,8 +39,8 @@ int digimain(int argc, char const *argv[])
         exit(1);
     }
 
+    nextFrameId = 0;
     StartThreads();
-
     SerialClose();
 
     return 0;
@@ -48,16 +49,57 @@ int digimain(int argc, char const *argv[])
 void Testola(void)
 {
     uint8_t apiMsg[64];
-    uint8_t dbgStr[1024];
     uint16_t pLen;
  
-    pLen = ApiGetParam((uint8_t*) "VL", 2, apiMsg);
-    DumpByteStr(apiMsg,dbgStr,pLen);
-    printf((char*)dbgStr);
+    pLen = ApiGetParam((uint8_t*) "VL", 2, GetNextFrameId(), apiMsg);
     SerialWrite(apiMsg, pLen);
 }
 
-void FakeInput(void)
+unsigned __stdcall DigiThreadFunc( void* pArguments )
+{
+    printf( "Starting Process...\n" );
+    Testola();
+    printf("Termaiting Process...\n");
+    _endthreadex( 0 );
+    return 0;
+}
+
+static uint8_t StartThreads(void)
+{
+    HANDLE hThread;
+    unsigned threadID;
+
+    printf( "Creating serial thread...\n" );
+
+    hThread = (HANDLE)_beginthreadex( NULL, 0, &DigiThreadFunc, NULL, 0, &threadID );
+
+    WaitForSingleObject( hThread, INFINITE );
+    printf( "Exiting\n");
+    // Destroy the thread object.
+    CloseHandle( hThread );
+
+    return 0;
+}
+
+static void SerialReadCb(uint8_t* readDataV, uint16_t len)
+{
+    uint8_t apiMsg[128];
+    uint8_t dbgStr[1024];
+    uint16_t pLen;
+
+    pLen = ApiDecodeFrame(readDataV,len,apiMsg,128,1);
+    
+    DumpAsciiStr(apiMsg,dbgStr,pLen);
+    printf((char*)dbgStr);
+}
+
+static uint8_t GetNextFrameId(void)
+{
+    nextFrameId += 1;
+    return nextFrameId;
+}
+
+static void FakeInput(void)
 {
     INPUT ip;
 
@@ -73,71 +115,3 @@ void FakeInput(void)
     ip.ki.dwFlags = KEYEVENTF_KEYUP; // KEYEVENTF_KEYUP for key release
     SendInput(1, &ip, sizeof(INPUT));
 }
-
-unsigned __stdcall DigiThreadFunc( void* pArguments )
-{
-    uint16_t i;
-    printf( "In serial thread...\n" );
-
-    for (i=0; i<2; i++)
-    {
-        Testola();
-        //FakeInput();
-        Sleep(2000);
-        printf("Thread not dead %d\n",i);
-    }
-
-    printf("Thread dead\n");
-
-    _endthreadex( 0 );
-    return 0;
-}
-
-uint8_t StartThreads(void)
-{
-    HANDLE hThread;
-    unsigned threadID;
-
-    printf( "Creating serial thread...\n" );
-
-    // Create the second thread.
-    hThread = (HANDLE)_beginthreadex( NULL, 0, &DigiThreadFunc, NULL, 0, &threadID );
-
-    // Wait until second thread terminates. If you comment out the line
-    // below, Counter will not be correct because the thread has not
-    // terminated, and Counter most likely has not been incremented to
-    // 1000000 yet.
-
-
-   // char myChar = ' ';
-   // while(myChar != 'q') {
-   //	cout << myCounter << endl;
-   //     myChar = (char) getchar();
-   //     printf("Input: %c\n",myChar);
-   // }
-    WaitForSingleObject( hThread, INFINITE );
-    printf( "Fred the thread ended\n");
-    // Destroy the thread object.
-    CloseHandle( hThread );
-
-    return 0;
-}
-
-static void SerialReadCb(uint8_t* readDataV, uint16_t len)
-{
-    uint8_t apiMsg[128];
-    uint8_t dbgStr[1024];
-    uint16_t pLen;
-
-    DumpByteStr(readDataV,dbgStr,len); 
-    printf((char*)dbgStr);
-
-    pLen = ApiDecodeFrame(readDataV,len,apiMsg,128,1);
-    
-    printf("Gut response\n");
-    DumpByteStr(apiMsg,dbgStr,pLen);
-    printf((char*)dbgStr);
-    DumpAsciiStr(apiMsg,dbgStr,pLen);
-    printf((char*)dbgStr);
-}
-

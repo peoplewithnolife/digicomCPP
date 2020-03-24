@@ -9,6 +9,8 @@
 
 #define MAX_COMPORT_STR_LEN 32
 
+//#define DEBUG_SHOW
+
 static HANDLE hComm;
 static TS_SERIAL_SETUP serialSetup;
 static HANDLE hSerialReadThread;
@@ -56,12 +58,16 @@ uint16_t SerialWrite(uint8_t* dataV, uint16_t len)
     ocStatus = GetOverlappedResult(hComm,&oc,&dNoOfBytesWritten,TRUE);
     if (ocStatus == true)
     {
+#ifdef DEBUG_SHOW
         printf("Worte %d bytes\n",dNoOfBytesWritten);
+#endif
     }
     else
     {
         DWORD err = GetLastError();
+#ifdef DEBUG_SHOW
         printf(":( :( >:( FAIL %d",err);
+#endif
     }
 
     return retVal;
@@ -168,7 +174,9 @@ static unsigned __stdcall SerialReadThreadFunc(void *pArguments)
             } while (NoBytesRead > 0);
             if (i != 0)
             {
+#ifdef DEBUG_SHOW
                printf("Read %d chars\n", i);
+#endif
                if (serialSetup.serialReadCb != NULL)
                {
                    serialSetup.serialReadCb((uint8_t*)SerialBuffer,i);

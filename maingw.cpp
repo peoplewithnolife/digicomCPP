@@ -5,7 +5,7 @@
 int main(int argc, char const *argv[])
 {
     /* code */
-    printf("mingw main caller\n");
+    //printf("mingw main caller\n");
     digimain(argc,argv);
     return 0;
 }
