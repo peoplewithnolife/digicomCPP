@@ -13,6 +13,7 @@
 typedef enum _TE_MESSAGE_EVENT_HANDLES
 {
     mevt_AT_RSP,
+    mevt_MODEM_STATUS,
     mevt_TOTAL_MESSAGE_EVENTS
 } TE_MESSAGE_EVENT_HANDLES;
 
@@ -22,17 +23,23 @@ typedef struct _TS_API_MESSAGE_IN
     uint8_t apiMsgIn[MAX_API_MSG_LEN];
 } TS_API_MESSAGE_IN;
 
-unsigned __stdcall DigiThreadFunc(void *pArguments);
+static unsigned __stdcall DigiThreadFunc(void *pArguments);
+static unsigned __stdcall InputFunc(void *pArguments);
+
 static uint8_t nextFrameId;
 static uint8_t ApiAtGetParam(uint8_t *atCmd);
 static void SerialReadCb(uint8_t *readDataV, uint16_t len);
 static uint8_t StartThreads(void);
 static uint8_t GetNextFrameId(void);
 static void FakeInput(void);
+static void PrintErrors(void);
+
+static uint8_t UpdateDigiCycler(uint8_t init, DWORD updateMs);
 
 static HANDLE msgEvents[mevt_TOTAL_MESSAGE_EVENTS];
 TS_API_MESSAGE_IN atMsgIn;
 
+static uint32_t errMsg, errSleep, errWake, totalTrials;
 int digimain(int argc, char const *argv[])
 {
     uint16_t i;
@@ -121,6 +128,7 @@ static void SetAirplaneMode(uint8_t on)
     if (WaitForSingleObject(msgEvents[mevt_AT_RSP], 5000) == WAIT_TIMEOUT)
     {
         printf("Message Failure!!!! :( :( :(\n");
+        errMsg ++;
     }
     else
     {
@@ -131,9 +139,124 @@ static void SetAirplaneMode(uint8_t on)
     }
 }
 
-unsigned __stdcall DigiThreadFunc(void *pArguments)
+typedef enum _TE_DIGI_CYCLE_STATE
 {
+    dcs_INIT,
+    dcs_AWAKE,
+    dcs_WAIT_PSM,
+    dcs_SLEEP,
+    dcs_WAIT_WAKE,
+    dcs_WAIT_CELL_CONNECT,
+    dcs_TOTAL_STATES
+} TE_DIGI_CYCLE_STATE;
+
+static uint8_t UpdateDigiCycler(uint8_t init, DWORD updateMs)
+{
+    static TE_DIGI_CYCLE_STATE dcState = dcs_INIT;
+    static DWORD elapsedTime;
+
+    if ((init != 0) || (dcState == dcs_INIT))
+    {
+        dcState = dcs_INIT;
+    }
+
+    switch (dcState)
+    {
+    case dcs_INIT:
+        /* code */
+        //SetAirplaneMode(0);
+        elapsedTime = 0;
+        dcState = dcs_AWAKE;
+        totalTrials ++;
+        break;
+    case dcs_AWAKE:
+        /* code */
+        if (elapsedTime > 3000)
+        {
+            SetAirplaneMode(1);
+            printf("Waiting Modem Status Disconnect...\n");
+            elapsedTime = 0;
+            dcState = dcs_WAIT_PSM;
+        }
+        break;
+    case dcs_WAIT_PSM:
+        if (WaitForSingleObject(msgEvents[mevt_MODEM_STATUS], 10) == WAIT_OBJECT_0)
+        {
+            printf("Got Modem Status:%d Time:%d\n", atMsgIn.apiMsgIn[1],elapsedTime);
+            dcState = dcs_SLEEP;
+            elapsedTime = 0;
+        }
+        else
+        {
+            if (elapsedTime > 30000)
+            {
+                printf("Never got disconnect...");
+                errSleep ++;
+#warning Recover from this
+                dcState = dcs_WAIT_WAKE;
+                elapsedTime = 0;
+            }
+        }
+        /* code */
+        break;
+    case dcs_SLEEP:
+        if (elapsedTime > 10000)
+        {
+            printf("Waking ...");
+            dcState = dcs_WAIT_WAKE;
+            elapsedTime = 0;
+        }
+        /* code */
+        break;
+    case dcs_WAIT_WAKE:
+        /* code */
+        if (elapsedTime > 10000)
+        {
+            printf("Waiting For cell connect ...\n");
+            SetAirplaneMode(0);
+            dcState = dcs_WAIT_CELL_CONNECT;
+            elapsedTime = 0;
+        }
+        break;
+    case dcs_WAIT_CELL_CONNECT:
+        /* code */
+        if (WaitForSingleObject(msgEvents[mevt_MODEM_STATUS], 10) == WAIT_OBJECT_0)
+        {
+            printf("Got Modem Status:%d Time:%d\n", atMsgIn.apiMsgIn[1],elapsedTime);
+            PrintErrors();
+            dcState = dcs_INIT;
+            elapsedTime = 0;
+        }
+        else
+        {
+            if (elapsedTime > 30000)
+            {
+                printf("Never got connect...");
+                errWake ++;
+#warning Recover from this
+                dcState = dcs_INIT;
+                elapsedTime = 0;
+            }
+        }
+        break;
+    default:
+        printf("Unknown error !!!!");
+        dcState = dcs_INIT;
+        break;
+    }
+    elapsedTime += updateMs;
+    return 0;
+}
+
+static unsigned __stdcall DigiThreadFunc(void *pArguments)
+{
+#define UPDATE_MS 1000
+    HANDLE hInputThread;
+    unsigned hInputThreadId;
+    uint8_t quit = 0;
+
     printf("Starting Process...\n");
+    hInputThread = (HANDLE)_beginthreadex(NULL, 0, &InputFunc, NULL, 0, &hInputThreadId);
 
     ApiAtGetParam((uint8_t *)"VL");
     ApiAtGetParam((uint8_t *)"HV");
@@ -141,8 +264,30 @@ unsigned __stdcall DigiThreadFunc(void *pArguments)
     ApiAtGetParam((uint8_t *)"DO");
     ApiAtGetParam((uint8_t *)"AI");
 
+    errMsg = 0;
+    errSleep = 0;
+    errWake = 0;
+    UpdateDigiCycler(1, UPDATE_MS);
+
+    while (quit == 0)
+    {
+        UpdateDigiCycler(0, UPDATE_MS);
+        if (WaitForSingleObject(hInputThread, UPDATE_MS) == WAIT_OBJECT_0)
+        {
+            quit = 1;
+        }
+    }
+
+    printf("Termaiting Process...\n");
+    _endthreadex(0);
+    return 0;
+}
+
+static unsigned __stdcall InputFunc(void *pArguments)
+{
     printf("Press q to exit");
     char myChar = ' ';
+
     while (myChar != 'q')
     {
         myChar = (char)getchar();
@@ -155,25 +300,23 @@ unsigned __stdcall DigiThreadFunc(void *pArguments)
             SetAirplaneMode(0);
         }
     }
-
-    printf("Termaiting Process...\n");
     _endthreadex(0);
     return 0;
 }
 
 static uint8_t StartThreads(void)
 {
-    HANDLE hThread;
-    unsigned threadID;
+    HANDLE hDigiThread;
+    unsigned digiThreadID;
 
     printf("Creating serial thread...\n");
 
-    hThread = (HANDLE)_beginthreadex(NULL, 0, &DigiThreadFunc, NULL, 0, &threadID);
+    hDigiThread = (HANDLE)_beginthreadex(NULL, 0, &DigiThreadFunc, NULL, 0, &digiThreadID);
 
-    WaitForSingleObject(hThread, INFINITE);
+    WaitForSingleObject(hDigiThread, INFINITE);
     printf("Exiting\n");
     // Destroy the thread object.
-    CloseHandle(hThread);
+    CloseHandle(hDigiThread);
 
     return 0;
 }
@@ -203,6 +346,10 @@ static void SerialReadCb(uint8_t *readDataV, uint16_t len)
             memcpy(atMsgIn.apiMsgIn, apiMsg, pLen);
             DumpByteStr(&atMsgIn.apiMsgIn[0], dbgStr, atMsgIn.len);
             printf((char *)dbgStr);
+            if (apiMsg[0] == 0x8A)
+            {
+                SetEvent(msgEvents[mevt_MODEM_STATUS]);
+            }
         }
     }
 }
@@ -215,6 +362,11 @@ static uint8_t GetNextFrameId(void)
         nextFrameId += 1;
     }
     return nextFrameId;
+}
+
+static void PrintErrors(void)
+{
+    printf("Trials:%d err: Msg:%d Sleep:%d Wake:%d\n",totalTrials, errMsg,errSleep,errWake);
 }
 
 static void FakeInput(void)
